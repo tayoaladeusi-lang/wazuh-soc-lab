@@ -1,0 +1,10 @@
+# Secrets — never commit
+*.token
+*.key
+secrets.env
+# Wazuh runtime
+*.log
+alerts.json
+# OS / editor
+.DS_Store
+*.swp

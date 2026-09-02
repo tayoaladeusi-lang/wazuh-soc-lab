@@ -1,0 +1,732 @@
+<!--
+  ============================================================================
+  WAZUH CUSTOM RULES — CONSOLIDATED (paste this whole file)
+  Lab: vulnerability assessment + detection engineering
+  Author: Olutayo Aladeusi
+  ============================================================================
+
+  INSTALL:
+    sudo nano /var/ossec/etc/rules/local_rules.xml
+    Paste the <group> blocks below AFTER your existing
+    <group name="local,powershell,"> ... </group> block.
+    Multiple <group> blocks in one file are valid.
+
+    sudo /var/ossec/bin/wazuh-logtest        # validate syntax loads clean
+    sudo systemctl restart wazuh-manager
+
+  ID MAP (yours already in use: 100500 = PowerShell EncodedCommand)
+    100012-100016  Web scanning / recon
+    100020-100026  Authentication / brute force
+    100030-100039  File integrity / webshell
+    100040-100049  Web attack payloads (SQLi, XSS, LFI, cmd injection)
+    100050-100059  Network / port scanning
+    100060-100069  Linux post-exploitation
+    100070-100079  Persistence
+    100080-100089  Vulnerability & config posture
+    100090-100099  Windows / Sysmon (extends your 100500)
+    100110-100119  Tuning / noise control
+
+  IMPORTANT — BUILT-IN SID DEPENDENCIES
+    Several rules below chain off Wazuh's default ruleset via <if_sid>.
+    Default SIDs shift between ruleset versions. BEFORE you rely on any
+    of these, confirm the parent SID on YOUR install:
+
+      sudo /var/ossec/bin/wazuh-logtest
+      (paste a real log line, read the "Rule id" it reports)
+
+    Every <if_sid> below is marked with a # VERIFY comment. Check them.
+  ============================================================================
+-->
+
+
+<!-- ==========================================================================
+     WEB SCANNING / RECON  (100010-100019)
+     Requires: Apache/Nginx access log collected on the agent via <localfile>
+     ========================================================================== -->
+<group name="local,web,recon,">
+
+  <!-- More reliable variant of the earlier 100010: chains off Wazuh's own
+       "web server 400 error code" rule instead of matching <status> directly. -->
+  <rule id="100012" level="4">
+    <if_sid>31101</if_sid>          <!-- # VERIFY: 31101 = web 400 error code -->
+    <description>Web 4xx response — probe candidate</description>
+    <group>recon,</group>
+  </rule>
+
+  <rule id="100013" level="10" frequency="10" timeframe="30">
+    <if_matched_sid>100012</if_matched_sid>
+    <same_field>srcip</same_field>
+    <description>Web scanner behaviour: 10+ 4xx from $(srcip) in 30s (ZAP/Burp/Nikto/Nessus web checks)</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>recon,web_scan,</group>
+  </rule>
+
+  <!-- Scanner self-identification. Most scanners announce themselves in the
+       User-Agent unless deliberately masked. Catching this is trivially easy
+       and that IS the point: note in your report that an attacker who changes
+       one config field defeats it — signature vs behaviour detection. -->
+  <rule id="100014" level="8">
+    <if_group>web</if_group>
+    <field name="url" negate="yes">^$</field>
+    <regex type="pcre2">(?i)(nikto|nmap|sqlmap|nessus|openvas|zaproxy|zap/|burp|acunetix|w3af|dirbuster|gobuster|wpscan|masscan)</regex>
+    <description>Scanner User-Agent observed from $(srcip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>recon,web_scan,</group>
+  </rule>
+
+  <!-- Directory / content discovery: many DISTINCT 404 paths, not just volume.
+       Distinguishes gobuster-style enumeration from a broken link loop. -->
+  <rule id="100015" level="10" frequency="15" timeframe="60">
+    <if_matched_sid>100012</if_matched_sid>
+    <same_field>srcip</same_field>
+    <different_field>url</different_field>
+    <description>Directory/content enumeration from $(srcip): 15+ distinct 404 paths in 60s</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+    <group>recon,web_scan,</group>
+  </rule>
+
+  <!-- Sensitive-path probing: config files, backups, VCS metadata, admin panels -->
+  <rule id="100016" level="10">
+    <if_group>web</if_group>
+    <regex type="pcre2">(?i)/(\.git|\.env|\.svn|wp-admin|phpmyadmin|admin|config\.php|backup|\.bak|\.sql|web\.config|id_rsa)</regex>
+    <description>Sensitive path probe from $(srcip): $(url)</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+    <group>recon,web_scan,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     AUTHENTICATION / BRUTE FORCE  (100020-100029)
+     ========================================================================== -->
+<group name="local,authentication,">
+
+  <!-- CARRIED FROM BATCH 1: baseline brute force on a single account.
+       Complements 100023 (spraying), which catches the low-and-slow variant
+       that deliberately stays under this rule's per-account threshold. -->
+  <rule id="100020" level="10" frequency="5" timeframe="120">
+    <if_matched_group>authentication_failed</if_matched_group>
+    <same_field>srcip</same_field>
+    <description>Possible brute-force: 5+ failed auths from $(srcip) in 2 minutes</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,brute_force,</group>
+  </rule>
+
+  <!-- CARRIED FROM BATCH 1: the credential-access moment. A burst of failures
+       is noise; a SUCCESS immediately following that burst is the alert that
+       actually matters. Same logic as 100045 on the web side. -->
+  <rule id="100021" level="12">
+    <if_matched_sid>100020</if_matched_sid>
+    <if_sid>5715</if_sid>            <!-- # VERIFY: 5715 = sshd auth success -->
+    <same_field>srcip</same_field>
+    <description>Successful login from $(srcip) after brute-force pattern — likely compromised credential</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,brute_force,valid_accounts,</group>
+  </rule>
+
+  <!-- Login attempts against accounts that do not exist = spraying/enumeration,
+       distinct from guessing the password of a real account. -->
+  <rule id="100022" level="10" frequency="6" timeframe="120">
+    <if_matched_sid>5710</if_matched_sid>   <!-- # VERIFY: 5710 = sshd, non-existent user -->
+    <same_field>srcip</same_field>
+    <description>User enumeration: 6+ logins for non-existent users from $(srcip)</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1589.001</id>
+    </mitre>
+    <group>authentication_failures,brute_force,</group>
+  </rule>
+
+  <!-- Password spraying: few attempts per account, many accounts.
+       Deliberately stays under per-account lockout thresholds — the reason
+       classic "5 failures on one account" rules miss it entirely.
+       Worth calling out explicitly in your writeup. -->
+  <rule id="100023" level="12" frequency="8" timeframe="300">
+    <if_matched_group>authentication_failed</if_matched_group>
+    <same_field>srcip</same_field>
+    <different_field>dstuser</different_field>
+    <description>Password spraying suspected from $(srcip): 8+ distinct usernames in 5 min</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,brute_force,</group>
+  </rule>
+
+  <!-- Web application login brute force (DVWA / Juice Shop login endpoints).
+       Tune the url regex to your target's actual auth path. -->
+  <rule id="100024" level="6">
+    <if_group>web</if_group>
+    <regex type="pcre2">(?i)(login|signin|auth|rest/user/login)</regex>
+    <status>^401$|^403$|^200$</status>
+    <description>Web application login attempt</description>
+    <group>authentication,</group>
+  </rule>
+
+  <rule id="100025" level="10" frequency="10" timeframe="60">
+    <if_matched_sid>100024</if_matched_sid>
+    <same_field>srcip</same_field>
+    <description>Web login brute force from $(srcip): 10+ attempts in 60s (Burp Intruder / ZAP fuzzer)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,brute_force,</group>
+  </rule>
+
+  <!-- Off-hours successful login. Lab value is low; production value is high,
+       and it demonstrates you can write context-aware rather than purely
+       signature-based detections. Adjust hours to your own lab habits. -->
+  <rule id="100026" level="8">
+    <if_sid>5715</if_sid>            <!-- # VERIFY: 5715 = sshd auth success -->
+    <time>11:00 pm - 5:00 am</time>
+    <description>Successful SSH login outside business hours from $(srcip) as $(dstuser)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,anomaly,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     FILE INTEGRITY / WEBSHELL  (100030-100039)
+     Requires <syscheck> on the agent covering the web root, e.g.:
+       <directories realtime="yes" report_changes="yes" check_all="yes">/var/www/html</directories>
+     ========================================================================== -->
+<group name="local,syscheck,">
+
+  <!-- CARRIED FROM BATCH 1: webshell dropped into the web root. This is the
+       payoff detection for a successful file-upload exploit in DVWA. -->
+  <rule id="100030" level="12">
+    <if_sid>550,554</if_sid>         <!-- # VERIFY: 550 modified / 554 added -->
+    <field name="file" type="pcre2">\.php$|\.jsp$|\.asp$|\.aspx$</field>
+    <description>Possible webshell dropped in web root: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>web_scan,file_integrity,webshell,</group>
+  </rule>
+
+  <!-- Executable/script permission set on a file — a dropped payload being
+       armed. Common immediately after a successful upload or download. -->
+  <rule id="100031" level="10">
+    <if_sid>550</if_sid>             <!-- # VERIFY: 550 = syscheck file modified -->
+    <field name="changed_attributes" type="pcre2">permission</field>
+    <field name="file" type="pcre2">/var/www/|/tmp/|/dev/shm/</field>
+    <description>Permissions changed on file in web root or temp dir: $(file)</description>
+    <mitre>
+      <id>T1222.002</id>
+    </mitre>
+    <group>file_integrity,</group>
+  </rule>
+
+  <!-- New file in world-writable temp locations. /dev/shm in particular is a
+       favourite staging directory precisely because it is memory-backed. -->
+  <rule id="100032" level="10">
+    <if_sid>554</if_sid>             <!-- # VERIFY: 554 = syscheck file added -->
+    <field name="file" type="pcre2">^/tmp/|^/dev/shm/|^/var/tmp/</field>
+    <description>New file staged in temp/world-writable directory: $(file)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>file_integrity,staging,</group>
+  </rule>
+
+  <!-- Critical system file modified — /etc/passwd, /etc/shadow, sudoers, SSH config -->
+  <rule id="100033" level="13">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/(passwd|shadow|sudoers|ssh/sshd_config|crontab)$</field>
+    <description>Critical system file modified: $(file)</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1136</id>
+    </mitre>
+    <group>file_integrity,privilege_escalation,</group>
+  </rule>
+
+  <!-- SSH authorized_keys touched anywhere = classic persistence -->
+  <rule id="100034" level="13">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">authorized_keys</field>
+    <description>SSH authorized_keys created or modified: $(file)</description>
+    <mitre>
+      <id>T1098.004</id>
+    </mitre>
+    <group>file_integrity,persistence,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     WEB ATTACK PAYLOADS  (100040-100049)
+     These chain off Wazuh's built-in web attack rules and raise severity,
+     because in your lab the DVWA/Juice Shop payloads are the whole point.
+     ========================================================================== -->
+<group name="local,web,attack,">
+
+  <rule id="100040" level="12">
+    <if_sid>31103</if_sid>           <!-- # VERIFY: 31103 = SQL injection attempt -->
+    <description>SQL injection attempt against $(url) from $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web_attack,sql_injection,</group>
+  </rule>
+
+  <!-- Volume of SQLi = automated tooling (sqlmap, ZAP active scan) rather
+       than a human hand-testing one parameter. -->
+  <rule id="100041" level="14" frequency="10" timeframe="60">
+    <if_matched_sid>100040</if_matched_sid>
+    <same_field>srcip</same_field>
+    <description>Automated SQL injection tooling from $(srcip): 10+ attempts in 60s</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web_attack,sql_injection,</group>
+  </rule>
+
+  <rule id="100042" level="12">
+    <if_sid>31105</if_sid>           <!-- # VERIFY: 31105 = XSS attempt -->
+    <description>Cross-site scripting attempt against $(url) from $(srcip)</description>
+    <mitre>
+      <id>T1059.007</id>
+    </mitre>
+    <group>web_attack,xss,</group>
+  </rule>
+
+  <!-- Local/remote file inclusion and path traversal -->
+  <rule id="100043" level="12">
+    <if_group>web</if_group>
+    <regex type="pcre2">(?i)(\.\./\.\./|%2e%2e%2f|/etc/passwd|/etc/shadow|php://|data://|file://|expect://)</regex>
+    <description>Path traversal / file inclusion attempt from $(srcip): $(url)</description>
+    <mitre>
+      <id>T1083</id>
+      <id>T1190</id>
+    </mitre>
+    <group>web_attack,lfi,</group>
+  </rule>
+
+  <!-- OS command injection in a URL or query string -->
+  <rule id="100044" level="13">
+    <if_group>web</if_group>
+    <regex type="pcre2">(?i)(;|\||%3b|%7c|`|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|bash|sh|python|perl)\b</regex>
+    <description>OS command injection attempt from $(srcip): $(url)</description>
+    <mitre>
+      <id>T1059</id>
+      <id>T1190</id>
+    </mitre>
+    <group>web_attack,command_injection,</group>
+  </rule>
+
+  <!-- THE ONE THAT MATTERS: attack payload followed by HTTP 200.
+       Attempts are noise. A 200 after an injection attempt is a candidate
+       SUCCESS, and separating those two is the core of alert triage.
+       Lead with this rule in your report. -->
+  <rule id="100045" level="14">
+    <if_sid>100040,100042,100043,100044</if_sid>
+    <status>^200$</status>
+    <description>Web attack returned HTTP 200 from $(srcip) — possible successful exploitation of $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web_attack,successful_attack,</group>
+  </rule>
+
+  <!-- 5xx following attack payloads: the app is breaking under injection,
+       which frequently precedes a working exploit. -->
+  <rule id="100046" level="12">
+    <if_sid>100040,100043,100044</if_sid>
+    <status>^500$|^502$|^503$</status>
+    <description>Web attack caused server error from $(srcip) — application instability under injection</description>
+    <group>web_attack,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     NETWORK / PORT SCANNING  (100050-100059)
+     Requires firewall logging (iptables/ufw/firewalld) collected on the agent.
+     ufw:  logs land in /var/log/ufw.log or /var/log/syslog
+     ========================================================================== -->
+<group name="local,firewall,">
+
+  <rule id="100050" level="3">
+    <if_group>firewall</if_group>
+    <action>^DROP$|^BLOCK$|^DENY$|^REJECT$</action>
+    <description>Firewall dropped connection</description>
+    <group>recon,</group>
+  </rule>
+
+  <!-- Horizontal scan: one source, many destination PORTS = nmap/Nessus
+       port sweep against a single host. -->
+  <rule id="100051" level="10" frequency="20" timeframe="60">
+    <if_matched_sid>100050</if_matched_sid>
+    <same_field>srcip</same_field>
+    <different_field>dstport</different_field>
+    <description>Port scan detected from $(srcip): 20+ distinct ports in 60s</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>recon,port_scan,</group>
+  </rule>
+
+  <!-- Vertical scan: one source, many destination HOSTS = network sweep -->
+  <rule id="100052" level="10" frequency="15" timeframe="60">
+    <if_matched_sid>100050</if_matched_sid>
+    <same_field>srcip</same_field>
+    <different_field>dstip</different_field>
+    <description>Network sweep detected from $(srcip): 15+ distinct hosts in 60s</description>
+    <mitre>
+      <id>T1018</id>
+      <id>T1046</id>
+    </mitre>
+    <group>recon,network_scan,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     LINUX POST-EXPLOITATION  (100060-100069)
+     Highest-value section for a SOC portfolio: these fire AFTER a successful
+     exploit, which is where real detection work happens.
+     Requires auditd + Wazuh's audit integration, OR command monitoring.
+     ========================================================================== -->
+<group name="local,linux,post_exploitation,">
+
+  <!-- Reverse shell invocation patterns. Broad by design — tune down if noisy.
+       Requires auditd execve logging or Wazuh command monitoring. -->
+  <rule id="100060" level="14">
+    <if_group>audit_command</if_group>   <!-- # VERIFY: your audit group name -->
+    <regex type="pcre2">(?i)(nc|ncat|netcat)\s+.*(-e|\s-c)\s*/bin/(ba)?sh|bash\s+-i\s*>&amp;\s*/dev/tcp/|python[23]?\s+-c\s+.*socket.*subprocess|socat\s+.*exec:</regex>
+    <description>Reverse shell invocation detected: $(audit.execve.a1)</description>
+    <mitre>
+      <id>T1059.004</id>
+      <id>T1071</id>
+    </mitre>
+    <group>reverse_shell,</group>
+  </rule>
+
+  <!-- Local reconnaissance burst: an operator (or automated post-ex module)
+       orienting on a freshly compromised host. Individually these commands
+       are innocuous; the CLUSTER is the signal. -->
+  <rule id="100061" level="5">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?i)^(whoami|id|uname|hostname|ifconfig|ip a|netstat|ss -|ps aux|sudo -l|cat /etc/passwd|crontab -l)</regex>
+    <description>Local system reconnaissance command executed</description>
+    <group>discovery,</group>
+  </rule>
+
+  <rule id="100062" level="12" frequency="6" timeframe="120">
+    <if_matched_sid>100061</if_matched_sid>
+    <same_field>audit.uid</same_field>
+    <different_field>audit.execve.a0</different_field>
+    <description>Post-exploitation discovery burst: 6+ distinct recon commands in 2 min</description>
+    <mitre>
+      <id>T1082</id>
+      <id>T1033</id>
+      <id>T1057</id>
+    </mitre>
+    <group>discovery,</group>
+  </rule>
+
+  <!-- Privilege escalation enumeration tooling -->
+  <rule id="100063" level="13">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?i)(linpeas|linenum|les\.sh|linux-exploit-suggester|pspy|unix-privesc-check)</regex>
+    <description>Privilege escalation enumeration tool executed</description>
+    <mitre>
+      <id>T1068</id>
+    </mitre>
+    <group>privilege_escalation,</group>
+  </rule>
+
+  <!-- SUID binary hunting — the single most common manual privesc first step -->
+  <rule id="100064" level="12">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">find\s+.*-perm\s+.*(4000|2000|u\+s|-u=s)</regex>
+    <description>SUID/SGID binary enumeration via find</description>
+    <mitre>
+      <id>T1548.001</id>
+    </mitre>
+    <group>privilege_escalation,discovery,</group>
+  </rule>
+
+  <!-- Payload download to disk from a shell context -->
+  <rule id="100065" level="12">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?i)(wget|curl)\s+.*(http|ftp).*\s+(-O|-o|>)\s*(/tmp/|/dev/shm/|/var/tmp/)</regex>
+    <description>Remote payload downloaded to temp directory</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>ingress_tool_transfer,</group>
+  </rule>
+
+  <!-- Defence evasion: log tampering / history clearing -->
+  <rule id="100066" level="14">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?i)(rm\s+.*(/var/log/|\.bash_history)|history\s+-c|>\s*/var/log/|shred\s+.*/var/log/|unset\s+HISTFILE)</regex>
+    <description>Log or shell history tampering detected</description>
+    <mitre>
+      <id>T1070.002</id>
+      <id>T1070.003</id>
+    </mitre>
+    <group>defense_evasion,</group>
+  </rule>
+
+  <!-- Security tooling being stopped — including Wazuh itself.
+       An analyst noticing their own sensor was disabled is a strong
+       portfolio detail. -->
+  <rule id="100067" level="14">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?i)(systemctl|service)\s+(stop|disable)\s+(wazuh|auditd|ufw|firewalld|fail2ban|rsyslog)</regex>
+    <description>Security service stopped or disabled — possible defence evasion</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>defense_evasion,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     PERSISTENCE  (100070-100079)
+     ========================================================================== -->
+<group name="local,linux,persistence,">
+
+  <rule id="100070" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/cron|^/var/spool/cron|^/etc/systemd/system/|^/etc/init\.d/</field>
+    <description>Scheduled task or service unit created/modified: $(file)</description>
+    <mitre>
+      <id>T1053.003</id>
+      <id>T1543.002</id>
+    </mitre>
+    <group>persistence,</group>
+  </rule>
+
+  <rule id="100071" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">\.bashrc$|\.bash_profile$|\.profile$|/etc/profile|/etc/rc\.local</field>
+    <description>Shell startup file modified — possible persistence: $(file)</description>
+    <mitre>
+      <id>T1546.004</id>
+    </mitre>
+    <group>persistence,</group>
+  </rule>
+
+  <!-- New user account created, or a user added to a privileged group -->
+  <rule id="100072" level="13">
+    <if_group>adduser,account_changed</if_group>
+    <description>User account created or modified — verify authorisation</description>
+    <mitre>
+      <id>T1136.001</id>
+    </mitre>
+    <group>persistence,account_manipulation,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     VULNERABILITY & CONFIG POSTURE  (100080-100089)
+     Ties Wazuh's own Vulnerability Detector to your Nessus findings — this is
+     the section that directly supports "external scan vs internal telemetry"
+     as a comparison in your report.
+     ========================================================================== -->
+<group name="local,vulnerability,">
+
+  <!-- Critical CVE detected on an endpoint by Wazuh's vulnerability detector.
+       Cross-reference these against your Nessus output: where they agree,
+       where they don't, and WHY (agent sees installed packages; Nessus sees
+       exposed services). That comparison is the analytical core of the report. -->
+  <rule id="100080" level="12">
+    <if_sid>23504,23505</if_sid>     <!-- # VERIFY: vulnerability-detector SIDs on your version -->
+    <field name="vulnerability.severity" type="pcre2">(?i)critical|high</field>
+    <description>Critical/High CVE on $(agent.name): $(vulnerability.cve) — $(vulnerability.package.name)</description>
+    <group>vulnerability_detector,</group>
+  </rule>
+
+  <!-- Failed CIS benchmark check (SCA module) -->
+  <rule id="100081" level="7">
+    <if_sid>19008</if_sid>           <!-- # VERIFY: SCA check failed -->
+    <description>Configuration assessment check failed on $(agent.name)</description>
+    <group>sca,compliance,</group>
+  </rule>
+
+  <!-- Agent went silent. During an exercise this is usually you rebooting a VM.
+       In production it is either an outage or an adversary killing telemetry —
+       and either way it must be alerted on, because you cannot detect what you
+       are not receiving. Good line for the "if this were production" section. -->
+  <rule id="100082" level="12">
+    <if_sid>503,505</if_sid>         <!-- # VERIFY: agent stopped / disconnected -->
+    <description>Wazuh agent disconnected on $(agent.name) — telemetry gap</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>agent_status,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     WINDOWS / SYSMON  (100090-100099)
+     Extends your existing 100500 PowerShell rule.
+     Requires Sysmon installed on the Windows endpoint + Wazuh sysmon config.
+     NOTE: Wazuh's sysmon group names are inconsistent between event types
+     (sysmon_event1 vs sysmon_event_11). Confirm with wazuh-logtest.
+     ========================================================================== -->
+<group name="local,windows,sysmon,">
+
+  <!-- Office or browser spawning a shell = the canonical initial-access chain -->
+  <rule id="100090" level="14">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\(winword|excel|powerpnt|outlook|acrobat|acrord32|chrome|firefox|msedge)\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32)\.exe$</field>
+    <description>Suspicious child process $(win.eventdata.image) spawned by $(win.eventdata.parentImage)</description>
+    <mitre>
+      <id>T1566.001</id>
+      <id>T1059</id>
+    </mitre>
+    <group>initial_access,</group>
+  </rule>
+
+  <!-- LOLBins used for download/execution -->
+  <rule id="100091" level="13">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(certutil|bitsadmin|mshta|regsvr32|rundll32|installutil|msbuild)\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(http|ftp|urlcache|-decode|javascript:|scrobj)</field>
+    <description>Living-off-the-land binary used for remote download/execution: $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1218</id>
+    </mitre>
+    <group>defense_evasion,</group>
+  </rule>
+
+  <!-- Credential dumping against LSASS -->
+  <rule id="100092" level="15">
+    <if_group>sysmon_event_10</if_group>   <!-- # VERIFY: process access event group -->
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
+    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)0x1010|0x1410|0x143a|0x1438</field>
+    <description>LSASS memory access — credential dumping attempt</description>
+    <mitre>
+      <id>T1003.001</id>
+    </mitre>
+    <group>credential_access,</group>
+  </rule>
+
+  <!-- Shadow copy deletion — ransomware precursor -->
+  <rule id="100093" level="15">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(vssadmin.*delete.*shadows|wbadmin.*delete.*catalog|bcdedit.*recoveryenabled\s+no)</field>
+    <description>Volume shadow copy deletion — ransomware behaviour</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>impact,ransomware,</group>
+  </rule>
+
+  <!-- Windows Defender or firewall disabled -->
+  <rule id="100094" level="14">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(Set-MpPreference.*Disable|netsh.*firewall.*(off|disable)|Add-MpPreference.*ExclusionPath)</field>
+    <description>Endpoint security control disabled or exclusion added</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>defense_evasion,</group>
+  </rule>
+
+</group>
+
+
+<!-- ==========================================================================
+     TUNING / NOISE CONTROL  (100110-100119)
+     ==========================================================================
+     Do NOT enable these during the exercise — you want to SEE the noise first
+     and record it. Enable them afterward, and document the before/after alert
+     volume in section 5 of your report. Demonstrating deliberate tuning with
+     a stated rationale reads far stronger than a clean dashboard with no
+     explanation of how it got clean.
+     ========================================================================== -->
+<group name="local,tuning,">
+
+  <!-- Tag traffic from your known scanner host so authorised assessment
+       activity is attributable rather than silently dropped.
+       REPLACE the IP with your actual scanning host. -->
+  <rule id="100110" level="3">
+    <if_group>web_scan,recon</if_group>
+    <srcip>192.168.56.101</srcip>       <!-- REPLACE with your scanner VM IP -->
+    <description>Authorised assessment activity from known scanner host $(srcip)</description>
+    <group>authorised_scan,</group>
+  </rule>
+
+  <!-- Suppress FIM noise from package-manager churn during updates.
+       Scoped narrowly on purpose: broad suppression is how real environments
+       go blind. -->
+  <rule id="100111" level="0">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/var/lib/(dpkg|apt|rpm)/|^/var/cache/</field>
+    <description>Package manager file churn — suppressed</description>
+  </rule>
+
+</group>
+
+
+<!--
+  ============================================================================
+  VALIDATION WORKFLOW
+  ============================================================================
+  1. Syntax check — the manager will refuse to start on malformed XML:
+       sudo /var/ossec/bin/wazuh-logtest
+
+  2. Test a rule against a real log line. Paste the line at the prompt and
+     read back the rule id and level it matched:
+       sudo /var/ossec/bin/wazuh-logtest
+       # e.g. paste an Apache 404 line, confirm 100012 fires
+
+  3. Restart and confirm clean start:
+       sudo systemctl restart wazuh-manager
+       sudo systemctl status wazuh-manager
+       sudo tail -f /var/ossec/logs/ossec.log
+
+  4. If the manager fails to start, the log names the offending rule id:
+       sudo grep -i error /var/ossec/logs/ossec.log | tail -20
+
+  ============================================================================
+  TUNING NOTES WORTH RECORDING IN YOUR REPORT
+  ============================================================================
+  - frequency counts events matching the referenced rule within timeframe.
+    Verify actual firing thresholds empirically rather than trusting the
+    number; behaviour has differed across OSSEC/Wazuh versions.
+
+  - <same_source_ip /> is the legacy form; <same_field>srcip</same_field> is
+    current. Both work in 4.x. This file uses the current form.
+
+  - Rules that never fire are worse than noisy rules, because they create
+    false confidence. For every rule above that produces nothing during your
+    exercise, state in the report whether that is because the behaviour did
+    not occur, or because the detection is broken. Those are very different
+    findings, and knowing the difference is the actual skill being assessed.
+  ============================================================================
+-->

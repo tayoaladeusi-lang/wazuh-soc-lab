@@ -1,0 +1,5 @@
+# Custom Suricata rule used to validate the Suricata -> Wazuh pipeline.
+# Append to /var/lib/suricata/rules/suricata.rules (or a rule file loaded by suricata.yaml),
+# then reload:  sudo kill -USR2 $(pidof suricata)
+# A matching alert appears in eve.json and is ingested by Wazuh as rule 86601.
+alert http any any -> any any (msg:"LOCAL Suricata pipeline test - custom UA detected"; http.user_agent; content:"SURICATA-LAB-TEST"; sid:9000001; rev:1;)

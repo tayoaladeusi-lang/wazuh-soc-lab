@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+# Wazuh -> Telegram custom integration (stdlib only, no pip deps).
+# Install to /var/ossec/integrations/custom-telegram on the manager (chmod 750, root:wazuh).
+# Configure in ossec.conf:
+#   <integration>
+#     <name>custom-telegram</name>
+#     <hook_url>https://api.telegram.org/bot<BOT_TOKEN>/sendMessage</hook_url>
+#     <rule_id>100030,100045,87105,108001</rule_id>   <!-- scope to real incidents -->
+#     <alert_format>json</alert_format>
+#   </integration>
+# Set CHAT_ID below to your Telegram chat id.
+import sys, json, urllib.request, urllib.parse
+
+CHAT_ID = "REPLACE_WITH_YOUR_CHAT_ID"
+
+try:
+    alert_file = sys.argv[1]
+    hook_url   = sys.argv[3]   # https://api.telegram.org/bot<token>/sendMessage
+    with open(alert_file) as f:
+        alert = json.load(f)
+    rule  = alert.get("rule", {})
+    agent = alert.get("agent", {})
+    msg = ("\U0001F6A8 Wazuh Alert\n"
+           f"Level: {rule.get('level')}\n"
+           f"Rule {rule.get('id')}: {rule.get('description')}\n"
+           f"Agent: {agent.get('name')} ({agent.get('id')})\n"
+           f"Time: {alert.get('timestamp','')}")
+    data = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": msg}).encode()
+    urllib.request.urlopen(urllib.request.Request(hook_url, data=data), timeout=10)
+except Exception as e:
+    with open("/var/ossec/logs/integrations.log", "a") as l:
+        l.write(f"custom-telegram error: {e}\n")
+sys.exit(0)
