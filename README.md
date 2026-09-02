@@ -43,6 +43,27 @@ not assumed.
 
 ---
 
+## Dashboard evidence
+
+Every capability above is backed by live captures — see the full gallery in
+[`screenshots/`](screenshots/). A few highlights:
+
+| | |
+|---|---|
+| ![Overview](screenshots/01-overview-dashboard.png) | ![Vulnerability detection](screenshots/02-vulnerability-detection-dashboard.png) |
+| **Overview** — 2 agents, 24h severity breakdown | **Vulnerability detection** — 10 critical / 306 high |
+| ![CIS benchmark](screenshots/05-sca-cis-benchmark.png) | ![VirusTotal](screenshots/07-malware-detection-virustotal-events.png) |
+| **SCA / CIS** — Oracle Linux 9 scored 47% | **VirusTotal** — webshell flagged by 26 engines |
+| ![MITRE ATT&CK](screenshots/10-mitre-attack-dashboard.png) | ![Telegram](screenshots/23-telegram-webshell-virustotal-alerts.png) |
+| **MITRE ATT&CK** — tactics/techniques by agent | **Notifications** — live incidents to phone |
+
+> Full set (24 captures): overview, vulnerability detection & inventory, SCA/CIS, malware
+> detection, VirusTotal enrichment, FIM, MITRE ATT&CK, Suricata threat hunting, NIST 800-53,
+> PCI DSS, GDPR, HIPAA, SOC 2 TSC, and Telegram notifications — in
+> [`screenshots/`](screenshots/).
+
+---
+
 ## Highlighted findings (the differentiator)
 
 This lab's value is not "it works" — it's the honest catalogue of how detections silently fail.
