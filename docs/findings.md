@@ -438,3 +438,30 @@ The endpoint carries employee-monitoring software and enforces application contr
 **Fix:** Downgraded the agent to 4.12.0 and disabled the Wazuh repo on the agent to stop it auto-upgrading.
 
 **Lesson:** Upgrade the manager first, then the agents. Also consider alerting on agent disconnection, since loss of telemetry is itself a detection failure.
+
+---
+
+## Finding 1 — Validated live: successful-exploitation rule now fires
+
+**Context:** Finding 1 originally documented that rule 100045 ("web attack returned HTTP 200") never fired, because it checked the `<status>` field while the web decoder stores the HTTP code in `<id>`. The fix changed the field reference.
+
+**Live validation (2026-10-31):** A real authenticated UNION-based SQLi against DVWA returned HTTP 200, and rule 100045 fired at **level 14** at 14:49:05:
+`Web attack returned HTTP 200 from 172.19.38.57 — possible successful exploitation of /dvwa/vulnerabilities/sqli/?id=1' UNION SELECT user,password FROM users-- -`
+
+Unauthenticated, the same payload was redirected (302) and only rule 100040 fired — confirming the attempt/success distinction works as intended.
+
+**Lesson:** "the rule loaded" and "the rule works" are different claims. Only a real attack that returned 200 proved the success rule fires; a config review would not have caught the original field-name bug.
+
+---
+
+## Operational note — Cross-distro port conflict masked as DB corruption
+
+**Symptom:** DVWA login returned HTTP 500; `systemctl start mariadb` on the Oracle Linux target failed with `Can't start server: Bind on TCP/IP port. Got error: 98: Address already in use`.
+
+**False lead:** The error points at the local host, and `ss -ltnp` on Oracle Linux showed 3306 LISTENING but with no owning process — because the process was in another distro's PID namespace.
+
+**Root cause:** A MySQL instance running in the **Ubuntu** distro (pid 430, ports 3306 + 33060) had bound `127.0.0.1:3306`. Because all WSL2 distros share one network namespace, it blocked Oracle Linux's MariaDB — which holds the DVWA database — from binding the same port. With MariaDB down, DVWA threw 500s, which surfaced in Wazuh as rule 31122 bursts (14:20–14:27).
+
+**Fix:** Stopped and disabled MySQL in Ubuntu; started MariaDB in Oracle Linux. DVWA recovered and the SQLi exploit then returned 200.
+
+**Lesson:** Same shared-namespace root cause as the masked source-IP finding. In WSL2, a port conflict or a connection can originate in a different distro than the one reporting the error; `ss` with an empty process field is the tell. Separate VMs or network namespaces would remove this class of false lead.
