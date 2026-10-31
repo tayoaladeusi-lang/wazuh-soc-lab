@@ -8,3 +8,4 @@ alerts.json
 # OS / editor
 .DS_Store
 *.swp
+*:Zone.Identifier
