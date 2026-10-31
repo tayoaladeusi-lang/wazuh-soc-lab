@@ -1,8 +1,5 @@
 #!/bin/bash
-# Wazuh active response: YARA-scan a file flagged by FIM (rule 554).
-# Install to /var/ossec/active-response/bin/ on the agent (chmod 750, root:wazuh).
-# Requires yara installed and rules at /var/ossec/yara/rules/lab_rules.yar.
-# Output is parsed by rules/local_decoder.xml -> alert rule 108001.
+# Wazuh active response: YARA-scan a file flagged by FIM
 LOG=/var/ossec/logs/active-responses.log
 YARA_BIN=/usr/bin/yara
 YARA_RULES=/var/ossec/yara/rules/lab_rules.yar
@@ -20,5 +17,7 @@ if [ -n "$FILE" ] && [ -e "$FILE" ]; then
   else
     echo "wazuh-yara: INFO - No YARA match for $FILE" >> "$LOG"
   fi
+else
+  echo "wazuh-yara: WARN - File not found (already moved or deleted): $FILE" >> "$LOG"
 fi
 exit 0
