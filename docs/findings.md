@@ -377,3 +377,64 @@ Step 5 should have come first. Rule 100500 duplicated existing vendor coverage a
 ## Note on Test Environment
 
 The endpoint carries employee-monitoring software and enforces application control (`certutil.exe` was blocked with "Access is denied" — a legitimate defensive control observed working). If this is a managed corporate device, vulnerability scanning activity should be moved to personal hardware before the exercise proceeds. Scan traffic and security tooling on a monitored endpoint is indistinguishable from insider activity to whoever is watching it.
+
+---
+
+## Finding 11 — Response outran enrichment (YARA silently skipped)
+
+**Symptom:** Webshells dropped in the web root were detected (rule 100030) and quarantined, but no YARA result (rule 108001) was ever produced.
+
+**Root cause (two layers):**
+1. Custom rule 100030 overrides vendor rule 554 for web-root files. The YARA active response was bound only to 554, so it never ran for webshells.
+2. Binding YARA to 100030 as well created a race. The quarantine script moved the file before YARA could scan it, and `yara-scan.sh` exited **silently** on the missing file. No error was logged.
+
+**Evidence:**
+- `race-test.php` (01:09): `MOVED` logged, no YARA line at all
+- `shell.php` (00:32): rule 100030 + quarantine, no 108001
+
+**Fix:**
+- The quarantine script now runs YARA **before** moving the file, then logs a SHA256 of the file for evidence
+- `yara-scan.sh` now logs a WARN when the target file is missing instead of exiting silently
+- The YARA active response is kept on rule 554 only, so webshells aren't scanned twice
+
+**Validation:** `fix-test.php` (01:20:47): YARA `php_webshell_generic` → `MOVED` → `SHA256`, in that order. Full pipeline confirmed live at 12:56: 100030 → 108001 → 87105 → quarantine → Telegram in about 3 seconds.
+
+**Lesson:** Adding a more specific custom rule can silently remove coverage that was attached to the vendor rule it overrides. Every response action bound to a parent rule must be re-checked when a child rule is added.
+
+---
+
+## Tuning — Duplicate VirusTotal lookups
+
+**Symptom:** A single webshell drop produced two VirusTotal lookups (2× rule 87105) and two Telegram alerts.
+
+**Root cause:** The VirusTotal integration was scoped to `<group>syscheck</group>`, so it ran on more than one FIM event for the same file.
+
+**Fix:**
+```xml
+<integration>
+  <name>virustotal</name>
+  <rule_id>554,100030</rule_id>
+  <alert_format>json</alert_format>
+</integration>
+```
+(The API key is omitted here; it's kept only in the manager config, never in the repo.)
+
+**Validation:**
+| Run | Time | 87105 alerts |
+|---|---|---|
+| Before | 12:46 | 2 |
+| After | 12:56 | 1 |
+
+**Impact:** Halves VirusTotal API usage and keeps the free-tier limit (4 requests per minute) from silently dropping enrichment, a likely cause of an earlier `exit status 4` integration error.
+
+---
+
+## Operational note — Agent silently disconnected after upgrade
+
+**Symptom:** Agent ol-dvwa-01 showed **disconnected**. No alert was raised for a dead agent.
+
+**Root cause:** A routine `dnf upgrade` moved the agent to 4.14.9 while the manager was on 4.12.0. The manager rejects agents newer than itself (`Agent version must be lower or equal to manager version`).
+
+**Fix:** Downgraded the agent to 4.12.0 and disabled the Wazuh repo on the agent to stop it auto-upgrading.
+
+**Lesson:** Upgrade the manager first, then the agents. Also consider alerting on agent disconnection, since loss of telemetry is itself a detection failure.
