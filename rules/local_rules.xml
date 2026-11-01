@@ -1,3 +1,30 @@
+<!-- Local Wazuh rules -->
+
+<group name="local,powershell,">
+
+  <rule id="100500" level="10">
+    <if_group>sysmon_event1</if_group>
+
+    <!-- Require PowerShell or PowerShell 7 -->
+    <field name="win.eventdata.image" type="pcre2">(?i)(powershell|pwsh)\.exe$</field>
+
+    <!-- Require -EncodedCommand or standalone -e -->
+    <field name="win.eventdata.commandLine" type="pcre2">(?i).*\s-(EncodedCommand|e)\b.*</field>
+
+    <description>PowerShell Encoded Command Detected</description>
+
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
 <!--
   ============================================================================
   WAZUH CUSTOM RULES — CONSOLIDATED (paste this whole file)
@@ -8,7 +35,13 @@
   INSTALL:
     sudo nano /var/ossec/etc/rules/local_rules.xml
     Paste the <group> blocks below AFTER your existing
-    <group name="local,powershell,"> ... </group> block.
+    <group name="local,powershell,"> ...   <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group> block.
     Multiple <group> blocks in one file are valid.
 
     sudo /var/ossec/bin/wazuh-logtest        # validate syntax loads clean
@@ -50,17 +83,29 @@
   <rule id="100012" level="4">
     <if_sid>31101</if_sid>          <!-- # VERIFY: 31101 = web 400 error code -->
     <description>Web 4xx response — probe candidate</description>
-    <group>recon,</group>
+    <group>recon,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <rule id="100013" level="10" frequency="10" timeframe="30">
     <if_matched_sid>100012</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>Web scanner behaviour: 10+ 4xx from $(srcip) in 30s (ZAP/Burp/Nikto/Nessus web checks)</description>
     <mitre>
       <id>T1595.002</id>
     </mitre>
-    <group>recon,web_scan,</group>
+    <group>recon,web_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Scanner self-identification. Most scanners announce themselves in the
@@ -69,26 +114,37 @@
        one config field defeats it — signature vs behaviour detection. -->
   <rule id="100014" level="8">
     <if_group>web</if_group>
-    <field name="url" negate="yes">^$</field>
     <regex type="pcre2">(?i)(nikto|nmap|sqlmap|nessus|openvas|zaproxy|zap/|burp|acunetix|w3af|dirbuster|gobuster|wpscan|masscan)</regex>
     <description>Scanner User-Agent observed from $(srcip)</description>
     <mitre>
       <id>T1595</id>
     </mitre>
-    <group>recon,web_scan,</group>
+    <group>recon,web_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Directory / content discovery: many DISTINCT 404 paths, not just volume.
        Distinguishes gobuster-style enumeration from a broken link loop. -->
   <rule id="100015" level="10" frequency="15" timeframe="60">
     <if_matched_sid>100012</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <different_field>url</different_field>
     <description>Directory/content enumeration from $(srcip): 15+ distinct 404 paths in 60s</description>
     <mitre>
       <id>T1595.003</id>
     </mitre>
-    <group>recon,web_scan,</group>
+    <group>recon,web_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Sensitive-path probing: config files, backups, VCS metadata, admin panels -->
@@ -99,9 +155,21 @@
     <mitre>
       <id>T1595.003</id>
     </mitre>
-    <group>recon,web_scan,</group>
+    <group>recon,web_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -115,13 +183,19 @@
        that deliberately stays under this rule's per-account threshold. -->
   <rule id="100020" level="10" frequency="5" timeframe="120">
     <if_matched_group>authentication_failed</if_matched_group>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>Possible brute-force: 5+ failed auths from $(srcip) in 2 minutes</description>
     <mitre>
       <id>T1110</id>
       <id>T1110.001</id>
     </mitre>
-    <group>authentication_failures,brute_force,</group>
+    <group>authentication_failures,brute_force,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- CARRIED FROM BATCH 1: the credential-access moment. A burst of failures
@@ -130,25 +204,37 @@
   <rule id="100021" level="12">
     <if_matched_sid>100020</if_matched_sid>
     <if_sid>5715</if_sid>            <!-- # VERIFY: 5715 = sshd auth success -->
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>Successful login from $(srcip) after brute-force pattern — likely compromised credential</description>
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,brute_force,valid_accounts,</group>
+    <group>authentication_success,brute_force,valid_accounts,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Login attempts against accounts that do not exist = spraying/enumeration,
        distinct from guessing the password of a real account. -->
   <rule id="100022" level="10" frequency="6" timeframe="120">
     <if_matched_sid>5710</if_matched_sid>   <!-- # VERIFY: 5710 = sshd, non-existent user -->
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>User enumeration: 6+ logins for non-existent users from $(srcip)</description>
     <mitre>
       <id>T1110.001</id>
       <id>T1589.001</id>
     </mitre>
-    <group>authentication_failures,brute_force,</group>
+    <group>authentication_failures,brute_force,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Password spraying: few attempts per account, many accounts.
@@ -157,13 +243,19 @@
        Worth calling out explicitly in your writeup. -->
   <rule id="100023" level="12" frequency="8" timeframe="300">
     <if_matched_group>authentication_failed</if_matched_group>
-    <same_field>srcip</same_field>
-    <different_field>dstuser</different_field>
+    <same_source_ip />
+    <different_user />
     <description>Password spraying suspected from $(srcip): 8+ distinct usernames in 5 min</description>
     <mitre>
       <id>T1110.003</id>
     </mitre>
-    <group>authentication_failures,brute_force,</group>
+    <group>authentication_failures,brute_force,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Web application login brute force (DVWA / Juice Shop login endpoints).
@@ -171,34 +263,74 @@
   <rule id="100024" level="6">
     <if_group>web</if_group>
     <regex type="pcre2">(?i)(login|signin|auth|rest/user/login)</regex>
-    <status>^401$|^403$|^200$</status>
+    <id>^401$|^403$|^200$</id>
     <description>Web application login attempt</description>
-    <group>authentication,</group>
+    <group>authentication,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <rule id="100025" level="10" frequency="10" timeframe="60">
     <if_matched_sid>100024</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>Web login brute force from $(srcip): 10+ attempts in 60s (Burp Intruder / ZAP fuzzer)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,brute_force,</group>
+    <group>authentication_failures,brute_force,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Off-hours successful login. Lab value is low; production value is high,
        and it demonstrates you can write context-aware rather than purely
        signature-based detections. Adjust hours to your own lab habits. -->
   <rule id="100026" level="8">
-    <if_sid>5715</if_sid>            <!-- # VERIFY: 5715 = sshd auth success -->
+    <if_sid>5715</if_sid>
     <time>11:00 pm - 5:00 am</time>
     <description>Successful SSH login outside business hours from $(srcip) as $(dstuser)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,anomaly,</group>
+    <group>authentication_success,anomaly,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100027" level="12" frequency="12" timeframe="600">
+    <if_matched_sid>100024</if_matched_sid>
+    <same_source_ip/>
+    <description>Low-and-slow web login spray from $(srcip): 12+ attempts over 10 min (evades burst rule 100025)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,brute_force,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
+  </rule>
+
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -218,7 +350,13 @@
     <mitre>
       <id>T1505.003</id>
     </mitre>
-    <group>web_scan,file_integrity,webshell,</group>
+    <group>web_scan,file_integrity,webshell,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Executable/script permission set on a file — a dropped payload being
@@ -231,7 +369,13 @@
     <mitre>
       <id>T1222.002</id>
     </mitre>
-    <group>file_integrity,</group>
+    <group>file_integrity,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- New file in world-writable temp locations. /dev/shm in particular is a
@@ -243,7 +387,13 @@
     <mitre>
       <id>T1105</id>
     </mitre>
-    <group>file_integrity,staging,</group>
+    <group>file_integrity,staging,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Critical system file modified — /etc/passwd, /etc/shadow, sudoers, SSH config -->
@@ -255,7 +405,13 @@
       <id>T1098</id>
       <id>T1136</id>
     </mitre>
-    <group>file_integrity,privilege_escalation,</group>
+    <group>file_integrity,privilege_escalation,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- SSH authorized_keys touched anywhere = classic persistence -->
@@ -266,9 +422,21 @@
     <mitre>
       <id>T1098.004</id>
     </mitre>
-    <group>file_integrity,persistence,</group>
+    <group>file_integrity,persistence,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -285,19 +453,31 @@
     <mitre>
       <id>T1190</id>
     </mitre>
-    <group>web_attack,sql_injection,</group>
+    <group>web_attack,sql_injection,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Volume of SQLi = automated tooling (sqlmap, ZAP active scan) rather
        than a human hand-testing one parameter. -->
   <rule id="100041" level="14" frequency="10" timeframe="60">
     <if_matched_sid>100040</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <description>Automated SQL injection tooling from $(srcip): 10+ attempts in 60s</description>
     <mitre>
       <id>T1190</id>
     </mitre>
-    <group>web_attack,sql_injection,</group>
+    <group>web_attack,sql_injection,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <rule id="100042" level="12">
@@ -306,7 +486,13 @@
     <mitre>
       <id>T1059.007</id>
     </mitre>
-    <group>web_attack,xss,</group>
+    <group>web_attack,xss,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Local/remote file inclusion and path traversal -->
@@ -318,7 +504,13 @@
       <id>T1083</id>
       <id>T1190</id>
     </mitre>
-    <group>web_attack,lfi,</group>
+    <group>web_attack,lfi,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- OS command injection in a URL or query string -->
@@ -330,7 +522,13 @@
       <id>T1059</id>
       <id>T1190</id>
     </mitre>
-    <group>web_attack,command_injection,</group>
+    <group>web_attack,command_injection,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- THE ONE THAT MATTERS: attack payload followed by HTTP 200.
@@ -339,23 +537,41 @@
        Lead with this rule in your report. -->
   <rule id="100045" level="14">
     <if_sid>100040,100042,100043,100044</if_sid>
-    <status>^200$</status>
+    <id>^200$</id>
     <description>Web attack returned HTTP 200 from $(srcip) — possible successful exploitation of $(url)</description>
     <mitre>
       <id>T1190</id>
     </mitre>
-    <group>web_attack,successful_attack,</group>
+    <group>web_attack,successful_attack,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- 5xx following attack payloads: the app is breaking under injection,
        which frequently precedes a working exploit. -->
   <rule id="100046" level="12">
     <if_sid>100040,100043,100044</if_sid>
-    <status>^500$|^502$|^503$</status>
+    <id>^500$|^502$|^503$</id>
     <description>Web attack caused server error from $(srcip) — application instability under injection</description>
-    <group>web_attack,</group>
+    <group>web_attack,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -370,35 +586,59 @@
     <if_group>firewall</if_group>
     <action>^DROP$|^BLOCK$|^DENY$|^REJECT$</action>
     <description>Firewall dropped connection</description>
-    <group>recon,</group>
+    <group>recon,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Horizontal scan: one source, many destination PORTS = nmap/Nessus
        port sweep against a single host. -->
   <rule id="100051" level="10" frequency="20" timeframe="60">
     <if_matched_sid>100050</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <different_field>dstport</different_field>
     <description>Port scan detected from $(srcip): 20+ distinct ports in 60s</description>
     <mitre>
       <id>T1046</id>
     </mitre>
-    <group>recon,port_scan,</group>
+    <group>recon,port_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Vertical scan: one source, many destination HOSTS = network sweep -->
   <rule id="100052" level="10" frequency="15" timeframe="60">
     <if_matched_sid>100050</if_matched_sid>
-    <same_field>srcip</same_field>
+    <same_source_ip />
     <different_field>dstip</different_field>
     <description>Network sweep detected from $(srcip): 15+ distinct hosts in 60s</description>
     <mitre>
       <id>T1018</id>
       <id>T1046</id>
     </mitre>
-    <group>recon,network_scan,</group>
+    <group>recon,network_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -420,7 +660,13 @@
       <id>T1059.004</id>
       <id>T1071</id>
     </mitre>
-    <group>reverse_shell,</group>
+    <group>reverse_shell,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Local reconnaissance burst: an operator (or automated post-ex module)
@@ -430,7 +676,13 @@
     <if_group>audit_command</if_group>
     <regex type="pcre2">(?i)^(whoami|id|uname|hostname|ifconfig|ip a|netstat|ss -|ps aux|sudo -l|cat /etc/passwd|crontab -l)</regex>
     <description>Local system reconnaissance command executed</description>
-    <group>discovery,</group>
+    <group>discovery,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <rule id="100062" level="12" frequency="6" timeframe="120">
@@ -443,7 +695,13 @@
       <id>T1033</id>
       <id>T1057</id>
     </mitre>
-    <group>discovery,</group>
+    <group>discovery,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Privilege escalation enumeration tooling -->
@@ -454,7 +712,13 @@
     <mitre>
       <id>T1068</id>
     </mitre>
-    <group>privilege_escalation,</group>
+    <group>privilege_escalation,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- SUID binary hunting — the single most common manual privesc first step -->
@@ -465,7 +729,13 @@
     <mitre>
       <id>T1548.001</id>
     </mitre>
-    <group>privilege_escalation,discovery,</group>
+    <group>privilege_escalation,discovery,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Payload download to disk from a shell context -->
@@ -476,7 +746,13 @@
     <mitre>
       <id>T1105</id>
     </mitre>
-    <group>ingress_tool_transfer,</group>
+    <group>ingress_tool_transfer,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Defence evasion: log tampering / history clearing -->
@@ -488,7 +764,13 @@
       <id>T1070.002</id>
       <id>T1070.003</id>
     </mitre>
-    <group>defense_evasion,</group>
+    <group>defense_evasion,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Security tooling being stopped — including Wazuh itself.
@@ -501,9 +783,21 @@
     <mitre>
       <id>T1562.001</id>
     </mitre>
-    <group>defense_evasion,</group>
+    <group>defense_evasion,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -520,7 +814,13 @@
       <id>T1053.003</id>
       <id>T1543.002</id>
     </mitre>
-    <group>persistence,</group>
+    <group>persistence,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <rule id="100071" level="12">
@@ -530,7 +830,13 @@
     <mitre>
       <id>T1546.004</id>
     </mitre>
-    <group>persistence,</group>
+    <group>persistence,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- New user account created, or a user added to a privileged group -->
@@ -540,9 +846,21 @@
     <mitre>
       <id>T1136.001</id>
     </mitre>
-    <group>persistence,account_manipulation,</group>
+    <group>persistence,account_manipulation,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -562,14 +880,26 @@
     <if_sid>23504,23505</if_sid>     <!-- # VERIFY: vulnerability-detector SIDs on your version -->
     <field name="vulnerability.severity" type="pcre2">(?i)critical|high</field>
     <description>Critical/High CVE on $(agent.name): $(vulnerability.cve) — $(vulnerability.package.name)</description>
-    <group>vulnerability_detector,</group>
+    <group>vulnerability_detector,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Failed CIS benchmark check (SCA module) -->
   <rule id="100081" level="7">
     <if_sid>19008</if_sid>           <!-- # VERIFY: SCA check failed -->
     <description>Configuration assessment check failed on $(agent.name)</description>
-    <group>sca,compliance,</group>
+    <group>sca,compliance,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Agent went silent. During an exercise this is usually you rebooting a VM.
@@ -582,9 +912,21 @@
     <mitre>
       <id>T1562.001</id>
     </mitre>
-    <group>agent_status,</group>
+    <group>agent_status,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -607,7 +949,13 @@
       <id>T1566.001</id>
       <id>T1059</id>
     </mitre>
-    <group>initial_access,</group>
+    <group>initial_access,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- LOLBins used for download/execution -->
@@ -620,7 +968,13 @@
       <id>T1105</id>
       <id>T1218</id>
     </mitre>
-    <group>defense_evasion,</group>
+    <group>defense_evasion,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Credential dumping against LSASS -->
@@ -632,7 +986,13 @@
     <mitre>
       <id>T1003.001</id>
     </mitre>
-    <group>credential_access,</group>
+    <group>credential_access,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Shadow copy deletion — ransomware precursor -->
@@ -643,7 +1003,13 @@
     <mitre>
       <id>T1490</id>
     </mitre>
-    <group>impact,ransomware,</group>
+    <group>impact,ransomware,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Windows Defender or firewall disabled -->
@@ -654,9 +1020,21 @@
     <mitre>
       <id>T1562.001</id>
     </mitre>
-    <group>defense_evasion,</group>
+    <group>defense_evasion,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -674,11 +1052,17 @@
   <!-- Tag traffic from your known scanner host so authorised assessment
        activity is attributable rather than silently dropped.
        REPLACE the IP with your actual scanning host. -->
-  <rule id="100110" level="3">
-    <if_group>web_scan,recon</if_group>
-    <srcip>192.168.56.101</srcip>       <!-- REPLACE with your scanner VM IP -->
+  <rule id="100110" level="0">
+    <if_sid>100012,100013,100016</if_sid>
+    <srcip>127.0.0.1</srcip>       <!-- REPLACE with your scanner VM IP -->
     <description>Authorised assessment activity from known scanner host $(srcip)</description>
-    <group>authorised_scan,</group>
+    <group>authorised_scan,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
   </rule>
 
   <!-- Suppress FIM noise from package-manager churn during updates.
@@ -690,6 +1074,12 @@
     <description>Package manager file churn — suppressed</description>
   </rule>
 
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
 </group>
 
 
@@ -720,7 +1110,7 @@
     Verify actual firing thresholds empirically rather than trusting the
     number; behaviour has differed across OSSEC/Wazuh versions.
 
-  - <same_source_ip /> is the legacy form; <same_field>srcip</same_field> is
+  - <same_source_ip /> is the legacy form; <same_source_ip /> is
     current. Both work in 4.x. This file uses the current form.
 
   - Rules that never fire are worse than noisy rules, because they create
@@ -730,25 +1120,96 @@
     findings, and knowing the difference is the actual skill being assessed.
   ============================================================================
 -->
+<group name="yara,">
+  <rule id="108000" level="0">
+    <decoded_as>yara_decoder</decoded_as>
+    <description>YARA grouping rule</description>
+  </rule>
+  <rule id="108001" level="12">
+    <if_sid>108000</if_sid>
+    <match>Scan result: </match>
+    <description>YARA match: $(yara_scanned_file) matched rule $(yara_rule)</description>
+    <mitre><id>T1505.003</id></mitre>
+    <group>yara,malware,  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
+  </rule>
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
 
-<!-- Windows / PowerShell endpoint detections (TICKET-005) -->
 <group name="sysmon,windows,powershell,custom,">
+
+  <!-- T1059.001 - Base64 encoded PowerShell command -->
   <rule id="100600" level="12">
     <if_sid>61603</if_sid>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)\s-e[a-z]*\s+[A-Za-z0-9+/=]{15,}</field>
     <description>PowerShell: Base64 encoded command executed (T1059.001) on $(win.system.computer)</description>
     <mitre><id>T1059.001</id></mitre>
   </rule>
+
+  <!-- T1059.001 - download cradle -->
   <rule id="100601" level="12">
     <if_sid>61603</if_sid>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)(DownloadString|DownloadFile|IEX|Invoke-Expression|Net\.WebClient)</field>
     <description>PowerShell: download cradle / IEX execution (T1059.001) on $(win.system.computer)</description>
     <mitre><id>T1059.001</id></mitre>
   </rule>
+
+  <!-- T1105 - LOLBin download -->
   <rule id="100602" level="10">
     <if_sid>61603</if_sid>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)(certutil.*urlcache|certutil.*-f\s+http|bitsadmin.*/transfer)</field>
     <description>LOLBin download attempt (T1105) on $(win.system.computer)</description>
     <mitre><id>T1105</id></mitre>
+  </rule>
+
+  <!-- T1547.001 - Run key persistence (Sysmon Event 13) -->
+
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
+  </rule>
+</group>
+
+<group name="sysmon,windows,powershell,custom,">
+
+  <rule id="100600" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\s-e[a-z]*\s+[A-Za-z0-9+/=]{15,}</field>
+    <description>PowerShell: Base64 encoded command executed (T1059.001) on $(win.system.computer)</description>
+    <mitre><id>T1059.001</id></mitre>
+  </rule>
+
+  <rule id="100601" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(DownloadString|DownloadFile|IEX|Invoke-Expression|Net\.WebClient)</field>
+    <description>PowerShell: download cradle / IEX execution (T1059.001) on $(win.system.computer)</description>
+    <mitre><id>T1059.001</id></mitre>
+  </rule>
+
+  <rule id="100602" level="10">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(certutil.*urlcache|certutil.*-f\s+http|bitsadmin.*/transfer)</field>
+    <description>LOLBin download attempt (T1105) on $(win.system.computer)</description>
+    <mitre><id>T1105</id></mitre>
+  </rule>
+
+
+  <rule id="100604" level="6">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)systeminfo.exe</field>
+    <description>System information discovery via systeminfo (T1082) on $(win.system.computer)</description>
+    <mitre><id>T1082</id></mitre>
   </rule>
 </group>
