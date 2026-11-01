@@ -71,3 +71,8 @@ identified) · **Miss** (nothing) · **Prevented** (blocked by the endpoint cont
   counts after any ruleset edit
 - A custom rule's field match wrong (e.g. matching `originalFileName` when the technique ran via
   `cmd /c`) → match `commandLine` or the field the telemetry actually populates
+- A test that errors or whose prerequisites did not load produces a FALSE miss — the technique
+  never executed, so nothing could fire. Always confirm the atomic actually ran (check its output
+  and for the expected telemetry) before recording a gap. (In this lab, T1059.001-15 silently
+  failed because its harness module was blocked by AV, making encoded-PowerShell look like a gap
+  when the detection was fine.)

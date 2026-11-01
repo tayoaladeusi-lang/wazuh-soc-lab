@@ -23,7 +23,7 @@ deliverable: each becomes a detection to build or tune.
 
 | # | Technique | ATT&CK | Detected | Rule(s) | Level | Verdict |
 |---|-----------|--------|----------|---------|-------|---------|
-| 1 | PowerShell (encoded) | T1059.001 | Generic only | 92032/92005/92052 | 3–4 | **Gap** — encoded-command rules (92057, custom 100600) did not fire on ART's `-EncodedCommand` variants |
+| 1 | PowerShell (encoded) | T1059.001 | Yes | 92057 + 100600 | 12 | **False gap** — ART's T1059.001-15 harness (AtomicTestHarnesses) failed to load (Defender blocked it as PUA), so no encoded command ran; validated directly, both rules fire (100600 also catches the short `-E` form) |
 | 2 | Run key persistence | T1547.001 | Yes | 92302 (built-in) | 6 | Covered by built-in; custom 100603 was redundant and did not fire |
 | 3 | Scheduled task | T1053.005 | Yes | 60642 | 3 | Covered |
 | 4 | System owner/user discovery | T1033 | Yes | 92022 | 3 | Covered |
@@ -33,9 +33,8 @@ Incidental high-value detections during the run: 92058 (level 12, AppCompat data
 92217 (level 6, executable dropped in Windows root).
 
 ## Coverage summary
-- **Detected:** 3 / 5 (Run-key persistence, scheduled task, user discovery)
-- **Generic execution only:** 2 / 5 (encoded PowerShell, systeminfo) — the wrapping process was
-  flagged, but the specific technique was not identified
+- **Detected:** 4 / 5 (encoded PowerShell, Run-key persistence, scheduled task, user discovery)
+- **Generic only:** 1 / 5 (systeminfo) — closed with custom rule 100604 (validated)
 
 Execution and persistence are well covered by the built-in 92xxx ruleset. The remaining weakness
 is technique-specific detection of obfuscated PowerShell and discovery commands.
@@ -47,11 +46,12 @@ proved it does not fire: the built-in rule 92302 already covers Run-key writes, 
 and validate every custom rule against a real technique. 100603 was removed as redundant.
 
 ## Gaps & remediation
-1. **Encoded PowerShell variants (T1059.001).** Built-in 92057 and custom 100600 both missed
-   ART's `-EncodedCommand` edge cases. Remediation: examine ART's exact command lines and broaden
-   the custom rule; re-run the atomic to confirm before/after.
-2. **System information discovery (T1082).** No specific detection. Remediation: added custom rule
-   100604 on `systeminfo.exe` execution (low severity, correlation value).
+1. **Encoded PowerShell (T1059.001) — FALSE GAP, now closed.** The original miss was caused by the
+   ART test harness (AtomicTestHarnesses) failing to load, not by a detection gap. Validated directly:
+   `powershell -E/-en/-enc/-EncodedCommand <base64>` all fire rule 92057 (built-in) and 100600 (custom),
+   level 12. Lesson: confirm a test actually executed before recording a gap.
+2. **System information discovery (T1082) — closed.** Added custom rule 100604 on `systeminfo`
+   execution (level 6); validated by re-running the atomic.
 
 ## Value
 This assessment turns "detections exist" into "measured coverage against ATT&CK, with named gaps,
