@@ -730,3 +730,31 @@
     findings, and knowing the difference is the actual skill being assessed.
   ============================================================================
 -->
+
+<!-- Windows / PowerShell endpoint detections (TICKET-005) -->
+<group name="sysmon,windows,powershell,custom,">
+  <rule id="100600" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\s-e[a-z]*\s+[A-Za-z0-9+/=]{15,}</field>
+    <description>PowerShell: Base64 encoded command executed (T1059.001) on $(win.system.computer)</description>
+    <mitre><id>T1059.001</id></mitre>
+  </rule>
+  <rule id="100601" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(DownloadString|DownloadFile|IEX|Invoke-Expression|Net\.WebClient)</field>
+    <description>PowerShell: download cradle / IEX execution (T1059.001) on $(win.system.computer)</description>
+    <mitre><id>T1059.001</id></mitre>
+  </rule>
+  <rule id="100602" level="10">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(certutil.*urlcache|certutil.*-f\s+http|bitsadmin.*/transfer)</field>
+    <description>LOLBin download attempt (T1105) on $(win.system.computer)</description>
+    <mitre><id>T1105</id></mitre>
+  </rule>
+  <rule id="100603" level="10">
+    <if_sid>61614</if_sid>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\CurrentVersion\\Run</field>
+    <description>Registry Run key persistence set (T1547.001) on $(win.system.computer)</description>
+    <mitre><id>T1547.001</id></mitre>
+  </rule>
+</group>

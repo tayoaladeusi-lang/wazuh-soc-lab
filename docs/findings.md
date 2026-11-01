@@ -486,3 +486,40 @@ Four distinct failures surfaced while getting Suricata to detect a simple port s
 This fired 76 times for one scan (retransmits to filtered ports) and mapped to Wazuh rule 86601.
 
 **Lesson:** The network-detection path had three independent silent failures (permissions, interface binding, capture mode) before rule logic even mattered — and then the rule logic also needed custom work. Only firing a real scan and checking what reached Wazuh proved the chain end to end.
+
+---
+
+## Endpoint detection findings (Windows / Sysmon / PowerShell)
+
+Getting a single malicious-PowerShell alert to fire exposed three stacked silent failures in
+the endpoint pipeline — each invisible while Sysmon, the Wazuh agent, and the manager all
+showed healthy, and the agent was connected with the Sysmon channel subscribed.
+
+**1. Sysmon was not capturing process creation.** The running config logged only file, registry,
+and network events (IDs 11/12/13/3) — no Event ID 1. An encoded-command execution produced no
+telemetry at all. A green Sysmon service said nothing about what it was actually recording.
+**Fix:** applied the SwiftOnSecurity Sysmon config (`sysmon64 -c sysmonconfig.xml`).
+
+**2. The decoder silently dropped rich events.** With Event 1 flowing, still no alert.
+`wazuh-analysisd` was logging `ERROR: Too many fields for JSON decoder` and discarding the
+field-rich Sysmon events before any rule evaluated them. Confirmed by enabling `logall_json`
+and finding the raw event in the archives while no alert existed.
+**Fix:** `analysisd.decoder_order_size=1024` in `/var/ossec/etc/local_internal_options.conf`.
+
+**3. Default process-create rules are level 0.** Generic Sysmon process events never become
+alerts and are not indexed, so Threat Hunting shows nothing even when events arrive. Detection
+of the *suspicious* command line came from built-in rule 92057 (level 12) once the event reached it.
+
+**Payoff:** after all three fixes, Wazuh's built-in ruleset caught the encoded command at level 12
+(rule 92057, ×6) with no custom rule required — plus 92213 (level 15), 92058, 92052. Custom rules
+100600–100603 remain for techniques with weaker built-in coverage (Run-key persistence, LOLBin downloads).
+
+**Also observed — prevention vs. detection:** Microsoft Defender ASR *prevented* the download
+cradle and `certutil -urlcache` (both failed to launch with "Access is denied"), while the local
+encoded command ran and was *detected*. A complete endpoint story needs both layers, and a SOC
+analyst should distinguish "blocked" from "detected" in triage.
+
+**Lesson:** the endpoint path had three independent silent failures before any detection logic
+mattered. Every layer — sensor config, decoder limits, rule severity — can drop telemetry quietly.
+Only firing a real technique and tracing it end to end (eventvwr → agent → archives → alert) proved
+where it broke.
