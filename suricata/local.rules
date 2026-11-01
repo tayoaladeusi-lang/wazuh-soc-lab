@@ -1,5 +1,3 @@
-# Custom Suricata rule used to validate the Suricata -> Wazuh pipeline.
-# Append to /var/lib/suricata/rules/suricata.rules (or a rule file loaded by suricata.yaml),
-# then reload:  sudo kill -USR2 $(pidof suricata)
-# A matching alert appears in eve.json and is ingested by Wazuh as rule 86601.
-alert http any any -> any any (msg:"LOCAL Suricata pipeline test - custom UA detected"; http.user_agent; content:"SURICATA-LAB-TEST"; sid:9000001; rev:1;)
+# LOCAL custom Suricata rules for the SOC lab
+# sid 100200 — deterministic port-scan detection (stock ET rules miss quiet SYN scans)
+alert tcp any any -> any any (msg:"LOCAL Portscan detected - 20+ SYN from single source in 10s"; flags:S; flow:to_server; detection_filter:track by_src, count 20, seconds 10; classtype:attempted-recon; sid:100200; rev:1;)

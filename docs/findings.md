@@ -465,3 +465,24 @@ Unauthenticated, the same payload was redirected (302) and only rule 100040 fire
 **Fix:** Stopped and disabled MySQL in Ubuntu; started MariaDB in Oracle Linux. DVWA recovered and the SQLi exploit then returned 200.
 
 **Lesson:** Same shared-namespace root cause as the masked source-IP finding. In WSL2, a port conflict or a connection can originate in a different distro than the one reporting the error; `ss` with an empty process field is the tell. Separate VMs or network namespaces would remove this class of false lead.
+
+---
+
+## Network IDS findings (port-scan scenario)
+
+Four distinct failures surfaced while getting Suricata to detect a simple port scan — each another case of "running" not meaning "working".
+
+**1. Suricata was silently dead for ~8 weeks.** The service showed `active (running)`, but every log output (`eve.json`, `fast.log`, `stats.log`) failed with `Permission denied` because the files were root-owned while the service runs as the `suricata` user. It had written nothing since Sep 3. A green systemd status told us nothing about whether detection worked.
+**Fix:** `chown -R suricata:suricata /var/log/suricata`.
+
+**2. NIDS had no local/east-west visibility.** Suricata was bound to `eth0`, so every historical alert was *outbound* traffic (Telegram, apt). In the WSL2 shared namespace, host-to-host traffic to a local IP is delivered over loopback and never crosses eth0, so no scan of the target was ever visible.
+**Fix:** bind Suricata to `lo` (`OPTIONS="-i lo"` in /etc/sysconfig/suricata).
+
+**3. `-i any` is unsupported under AF_PACKET.** The obvious "watch everything" fix failed with `af-packet: any: failed to find interface: No such device` — the capture thread never started and eve.json stayed empty while the service still showed active. AF_PACKET needs a real interface; `any` is a libpcap feature.
+**Fix:** use `lo` explicitly.
+
+**4. Stock ET rules don't catch a quiet SYN scan.** With capture finally working, `nmap -sS --top-ports 50` produced packets but zero alerts. Detection required a custom threshold rule:
+`alert tcp any any -> any any (flags:S; detection_filter:track by_src, count 20, seconds 10; sid:100200)`
+This fired 76 times for one scan (retransmits to filtered ports) and mapped to Wazuh rule 86601.
+
+**Lesson:** The network-detection path had three independent silent failures (permissions, interface binding, capture mode) before rule logic even mattered — and then the rule logic also needed custom work. Only firing a real scan and checking what reached Wazuh proved the chain end to end.
