@@ -1,0 +1,5 @@
+# ICS / Modbus detection rules (TICKET-007) -> Wazuh rule 86601
+# NOTE: keyword needs a space after 'modbus:'  (modbus: access write, NOT modbus:access write)
+alert modbus any any -> any any (msg:"ICS Modbus - Write to Coils (FC5/FC15) - possible unauthorized control"; modbus: access write coils; classtype:attempted-admin; sid:100300; rev:3;)
+alert modbus any any -> any any (msg:"ICS Modbus - Write to Holding Registers (FC6/FC16) - possible setpoint tampering"; modbus: access write holding; classtype:attempted-admin; sid:100301; rev:3;)
+alert modbus any any -> any any (msg:"ICS Modbus - Any Write Operation to PLC"; modbus: access write; classtype:attempted-admin; sid:100302; rev:3;)

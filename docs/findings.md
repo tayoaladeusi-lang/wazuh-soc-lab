@@ -523,3 +523,29 @@ analyst should distinguish "blocked" from "detected" in triage.
 mattered. Every layer — sensor config, decoder limits, rule severity — can drop telemetry quietly.
 Only firing a real technique and tracing it end to end (eventvwr → agent → archives → alert) proved
 where it broke.
+
+---
+
+## OT/ICS findings (Modbus detection)
+
+Building Modbus intrusion detection surfaced five issues specific to monitoring ICS traffic -
+useful because OT monitoring differs markedly from IT:
+
+1. **Modbus parser off by default.** Suricata ships with `app-layer.protocols.modbus: no`; it
+   must be enabled (with detection-ports dp:502) before any Modbus rule can match.
+2. **Loopback MTU dropped ~96% of packets.** WSL's `lo` uses 65536-byte frames that overflow
+   Suricata's AF_PACKET buffers. Lowering `lo` MTU to 1500 took drops to ~0.
+3. **Loopback checksums are invalid, so ICS packets were silently dropped.** Local traffic skips
+   checksum computation; Suricata validates and drops by default. Fixed with `-k none` /
+   `checksum-validation: no`.
+4. **Rule keyword syntax mattered.** `modbus:function 5` never matched; `modbus: access write`
+   (space after the colon) did. Found by testing variants against a captured pcap.
+5. **Live loopback capture would not engage the parser** even after 1-4. Resolution: **offline
+   pcap analysis** (`suricata -r modbus.pcap -k none`), then feed the alerts into Wazuh. This is
+   not a workaround to apologise for - passive OT monitoring from a TAP/SPAN capture is standard
+   practice, since you cannot run intrusive tooling on a live control network.
+
+**Lesson:** ICS detection is not "IT detection on port 502." The protocol parser, the capture
+path, and the operational model (passive, read-mostly, change-controlled) all differ. The
+detection that matters is distinguishing a WRITE (manipulation of control) from the constant
+benign READ polling.
