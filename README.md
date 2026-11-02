@@ -16,6 +16,27 @@ not assumed.
 
 ---
 
+## SOC Tier 1 Triage & Detection Engineering (7 scenarios)
+
+A full analyst workflow — **alert → triage → evidence → ticket → playbook** — across Linux, web,
+network, Windows endpoint, adversary emulation, and OT/ICS. Every detection validated by a live
+attack. Full write-up in [`soc-tier1-triage/`](soc-tier1-triage/README.md).
+
+| # | Scenario | Detection | MITRE |
+|---|----------|-----------|-------|
+| 001 | SSH user enumeration / brute force | 5710, 100022 | T1110.001/.003 |
+| 002 | Webshell dropped in web root | 100030 + YARA 108001 + VirusTotal | T1505.003 |
+| 003 | SQL injection (attempt + success) | 100040, 100045 (level 14) | T1190 |
+| 004 | Network port scan | Suricata sid 100200 → 86601 | T1046, T1595.001 |
+| 005 | Malicious PowerShell (Windows/Sysmon) | Sysmon → 92057 (level 12) | T1059.001 |
+| 006 | ATT&CK coverage assessment (Atomic Red Team) | 5/5 measured; dead rule + false gap found | multiple |
+| 007 | **OT/ICS** — unauthorized Modbus write to PLC | Suricata sids 100300-102 → 86601 | T0855, T0831, T0836 |
+
+Highlights: a successful-exploitation rule proven live (HTTP 200), an endpoint sensor found
+**blind to process creation**, a coverage assessment that caught a **custom rule that never
+fired**, and working **Modbus/ICS** detection distinguishing an unauthorized control WRITE from
+benign HMI polling — plus an honest log of silent failures in [`docs/findings.md`](docs/findings.md).
+
 ## What this lab demonstrates
 
 | Capability | What was built | Validation |
